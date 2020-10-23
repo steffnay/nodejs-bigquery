@@ -108,7 +108,14 @@ export {
   TableRowValue,
   TableSchema,
   ViewDefinition,
+  encodeRows,
 } from './table';
 
 export {Routine} from './routine';
 export {Model} from './model';
+
+export {
+  Queue } from './streams'
+export {Publisher} from './publisher'
+export {RowBatch} from './rowBatch'
+

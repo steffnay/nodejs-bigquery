@@ -26,6 +26,9 @@ import * as is from 'is';
 import * as path from 'path';
 import * as streamEvents from 'stream-events';
 import * as uuid from 'uuid';
+import {Transform, PassThrough} from 'stream'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pumpify = require('pumpify');
 import {
   BigQuery,
   Job,
@@ -44,6 +47,11 @@ import {GoogleErrorBody} from '@google-cloud/common/build/src/util';
 import {Duplex, Writable} from 'stream';
 import {JobMetadata} from './job';
 import bigquery from './types';
+import {Queue } from './streams'
+import {Publisher} from './publisher'
+import {RowBatch} from './rowBatch'
+import { file } from 'tmp';
+import { domNode } from 'is';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const duplexify = require('duplexify');
@@ -1106,6 +1114,49 @@ class Table extends common.ServiceObject {
     this.bigQuery.createJob(body, callback!);
   }
 
+  createInsertStream_(options?: InsertRowsOptions): Writable {
+    options =
+    typeof options === 'object'
+      ? options
+      : ({} as InsertRowsOptions);
+    
+    const {schema} = options;
+
+    const json = extend(true, {}, options);
+
+    const fileWriteStream = duplexify();
+
+    fileWriteStream.on('progress', (evt: any) => {
+      dup.emit('progress', evt);
+    });
+
+    const dup = streamEvents(
+      pumpify([
+        new PassThrough(),
+        new encodeRows(),
+        fileWriteStream,
+      ])
+    ) as Duplex;
+
+    // const dup = streamEvents(duplexify());
+    const pub = new Publisher(this);
+    dup.on('writing', () => {
+      pub.publishMessage(fileWriteStream, ()=>{ console.log('done!') })
+      return
+    });
+
+    fileWriteStream.on('response', dup.emit.bind(dup, 'response'));
+    fileWriteStream.on('prefinish', () => {
+      dup.cork();
+    });
+
+    fileWriteStream.on('complete', () => {
+     dup.uncork();
+    });
+    return dup as Writable;
+  }
+
+  
   createLoadJob(
     source: string | File,
     metadata?: JobLoadMetadata
@@ -2224,6 +2275,44 @@ class Table extends common.ServiceObject {
   ): void | Promise<common.SetMetadataResponse> {
     const body = Table.formatMetadata_(metadata as TableMetadata);
     super.setMetadata(body, callback!);
+  }
+}
+
+export class encodeRows extends Transform {
+  constructor(options?:any) {
+    super (options)
+
+    // The stream will have Buffer chunks. The
+    // decoder converts these to String instances.
+    // this._decoder = new StringDecoder('utf-8')
+  }
+
+  _transform (chunk: any, encoding:any, callback:any) {
+    // Convert the Buffer chunks to String.
+    if (encoding === 'buffer') {
+      chunk = chunk.toJSON();
+    }
+
+    // Exit on CTRL + C.
+    if (chunk === '\u0003') {
+      process.exit()
+    }
+
+    let rows = arrify(chunk) as RowMetadata[];
+    rows = rows.map((row: RowMetadata) => {
+      const encoded: InsertRow = {
+        json: Table.encodeValue_(row)!,
+      };
+
+      // if (options.createInsertId !== false) {
+      //   encoded.insertId = uuid.v4();
+      // }
+
+      return encoded;
+    });
+
+    // Pass the chunk on.
+    callback(null, rows)
   }
 }
 
