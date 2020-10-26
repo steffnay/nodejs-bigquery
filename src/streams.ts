@@ -38,9 +38,10 @@ import {
   PagedResponse,
   PagedCallback,
   JobRequest,
+  Table,
   PagedRequest,
 } from '.';
-import {GoogleErrorBody} from '@google-cloud/common/build/src/util';
+import {GoogleErrorBody, MakeAuthenticatedRequestFactoryConfig} from '@google-cloud/common/build/src/util';
 import {Duplex, Writable} from 'stream';
 import {JobMetadata} from './job';
 import bigquery from './types';
@@ -161,14 +162,42 @@ export interface TableOptions {
   location?: string;
 }
 
+import {BATCH_LIMITS} from './publisher';
+
+export interface BatchPublishOptions {
+  maxBytes?: number;
+  maxMessages?: number;
+  maxMilliseconds?: number;
+}
+
+const defaultOptions = {
+    // The maximum number of messages we'll batch up for publish().
+    maxOutstandingMessages: 100,
+
+    // The maximum size of the total batched up messages for publish().
+    maxOutstandingBytes: 1 * 1024 * 1024,
+
+    // The maximum time we'll wait to send batched messages, in milliseconds.
+    maxDelayMillis: 10000,
+
+}
+
 export abstract class RowQueue extends EventEmitter {
   batchOptions: any;
   publisher: any;
+  table: any;
+  insertOpts: any;
   pending?: NodeJS.Timer;
-  constructor(publisher: any) {
+  stream: any;
+  constructor(table: any, dup: any, options?: any) {
     super();
-    this.publisher = publisher;
-    this.batchOptions = publisher.settings.batching!;
+    // const {insertOpts, batchOpts} = options!;
+    this.table = table;
+    // this.insertOpts = insertOpts;
+    // this.publisher = publisher;
+    // this.batchOptions = options || this.setOptions();
+    this.stream = dup
+    // this.batchOptions = publisher.settings.batching!;
   }
   /**
    * Adds a message to the queue.
@@ -193,34 +222,90 @@ export abstract class RowQueue extends EventEmitter {
    * @param {function} [callback] Callback to be fired when publish is done.
    */
   _publish(
-    dup: any,
+    rows: any,
+    // options: any,
     callbacks: any[],
     callback?: any
   ): void {
-    const {table, settings} = this.publisher;
+    // const {table, settings} = this.publisher;
     // const {rows, options= {}} = dup;
     // const reqOpts = {
     //   table: table.name,
     //   messages,
     // };
+    // const sendStream = duplexify()
+    // const req = {json: rows}
+    // const buf = Buffer.from(JSON.stringify(req))
+    // sendStream.push(buf)
+    const uri = `http://${this.table.bigQuery.apiEndpoint}/bigquery/v2/projects/${this.table.bigQuery.projectId}/datasets/${this.table.dataset.id}/tables/${this.table.id}/insertAll`
 
+    const reqOpts = {
+      uri
+    }
+    // this.table._insert(rows, options,(err: any, resp: any) => {
+    //   if (typeof callback === 'function') {
+    //     callback(err, resp);
+    //   }
+    // });
+ 
+    const json = extend(true, {}, {rows});
+    this.table.request({
+      method: 'POST',
+      uri: '/insertAll',
+      json,
+      }, (err:any, resp:any) => {
 
-    common.util.makeWritableStream(dup, {
-      makeAuthenticatedRequest: table.bigQuery.makeAuthenticatedRequest,
-      // metadata: options.metadata
-      request: {
-        method: 'POST',
-        uri: '/insertAll'}
-      }, // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (err:any, body:any, resp:any) => {
-      if (err) {
-        dup.destroy(err);
-        return;
+      const partialFailures = (resp.insertErrors || []).map(
+        (insertError: GoogleErrorBody) => {
+          return {
+            errors: insertError.errors!.map(error => {
+              return {
+                message: error.message,
+                reason: error.reason,
+              };
+            }),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            row: rows[(insertError as any).index],
+          };
+        }
+      );
+
+      if (partialFailures.length > 0) {
+        throw new common.util.PartialFailureError({
+          errors: partialFailures,
+          response: resp,
+        } as GoogleErrorBody);
       }
-      dup.emit('response', {body, resp});
-      dup.emit('complete');
-    });
+      callbacks.forEach((callback) => callback(err, resp));
+      if (typeof callback === 'function') {
+        console.log('***')
+        this.stream.emit('response', resp)
+        callback(err);
+      }
+      console.log('***')
+      this.stream.emit('response', resp)
+    })
+    
+    // common.util.makeWritableStream(sendStream, {
+    //   makeAuthenticatedRequest: (reqOpts: object) => {
+    //     this.table.request(reqOpts as any, (err:any, body:any, resp:any) => {
+    //       if (err) {
+    //         this.stream.destroy(err);
+    //         return;
+    //       }
+
+    //       // this.metadata = body;
+    //       this.stream.emit('response', resp);
+    //       this.stream.emit('complete');
+    //     });
+    //   },
+    //   request: reqOpts,
+    //   // metadata: options.metadata,
+    //   // request: reqOpts,
+    // });
   }
+
+
 }
 
 export type rowBatch = any;
@@ -234,9 +319,17 @@ export type rowBatch = any;
  */
 export class Queue extends RowQueue {
   batch: rowBatch;
-  constructor(publisher: Publisher) {
-    super(publisher);
+  batchOptions: any;
+  error: any;
+  batches:any
+  inFlight: any;
+  constructor(table: any, dup: any, options?: any) {
+    super(table, dup, options);
+    if(typeof options === 'object') {
+      this.batchOptions = options}
+    else {this.setOptions();}
     this.batch = new RowBatch(this.batchOptions);
+    this.inFlight = false;
   }
   /**
    * Adds a row to the queue.
@@ -245,24 +338,41 @@ export class Queue extends RowQueue {
    * @param {PublishCallback} callback The publish callback.
    */
   add(row: any, callback: any): void {
+    row = {json: Table.encodeValue_(row)};
+    // if (options.createInsertId !== false) {
+      row.insertId = uuid.v4();
+    // }
+
+    // if (this.error) {
+    //   callback(this.error);
+    //   return;
+    // }
+    // row = JSON.stringify(row)
+    // row = row.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2": '); 
+    // row = JSON.parse(row)
     if (!this.batch.canFit(row)) {
       this.publish();
     }
-
+    
     this.batch.add(row, callback);
 
     if (this.batch.isFull()) {
       this.publish();
     } else if (!this.pending) {
       const {maxMilliseconds} = this.batchOptions;
-      this.pending = setTimeout(() => this.publish(), maxMilliseconds!);
+      this.pending = setTimeout(() => {
+        console.log("publishing")
+        console.log(this.batch)
+        this.publish()
+      }, maxMilliseconds!);
     }
   }
   /**
    * Cancels any pending publishes and calls _publish immediately.
    */
   publish(callback?: any): void {
-    const {messages, callbacks} = this.batch;
+    const {rows, callbacks} = this.batch;
+    const definedCallback = callback || (() => {});
 
     this.batch = new RowBatch(this.batchOptions);
 
@@ -271,6 +381,61 @@ export class Queue extends RowQueue {
       delete this.pending;
     }
 
-    this._publish(messages, callbacks, callback);
+    this._publish(rows, callbacks, callback
+    //   (err: any, resp:any) => {
+    //   // this.inFlight = false;
+
+    //   if (err) {
+    //     // this.handlePublishFailure(err);
+    //     definedCallback(err, resp);
+    //   // } else if (this.batches.length) {
+    //   //   this.beginNextPublish();
+    //   } else {
+    //     this.stream.emit('response', resp)
+    //     // this.stream.emit('drain');
+    //     // this.stream.emit('complete')
+    //     // definedCallback(null, resp);
+    //   }
+    // }
+    );
   }
+  // get currentBatch(): any {
+  //   if (!this.batches.length) {
+  //     this.batches.push(this.createBatch());
+  //   }
+  //   return this.batches[0];
+  // }
+  // handlePublishFailure(err: any): void {
+  //   this.error = new Error(this.key, err);
+
+  //   // reject all pending publishes
+  //   while (this.batches.length) {
+  //     const {callbacks} = this.batches.pop()!;
+  //     callbacks.forEach(callback => callback(err));
+  //   }
+  // }
+
+  setOptions(options?: any): void {
+    const defaults = {
+      batching: {
+        maxBytes: defaultOptions.maxOutstandingBytes,
+        maxMessages: defaultOptions.maxOutstandingMessages,
+        maxMilliseconds: defaultOptions.maxDelayMillis,
+      },
+    };
+    
+    const opts = (typeof options === 'object')  ? options : defaults
+  
+    // const {
+    //   batching,
+    // } = extend(true, defaults, options);
+  
+  
+    this.batchOptions = {
+        maxBytes: Math.min(opts.batching.maxBytes, BATCH_LIMITS.maxBytes!),
+        maxMessages: Math.min(opts.batching.maxMessages, BATCH_LIMITS.maxMessages!),
+        maxMilliseconds: opts.batching.maxMilliseconds,
+    };
+  
+   }
 }

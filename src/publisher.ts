@@ -16,7 +16,7 @@
 
 import {promisify, promisifyAll} from '@google-cloud/promisify';
 import * as extend from 'extend';
-import {defaultOptions} from './default-options';
+// import {defaultOptions} from './default-options';
 import {Queue } from './streams'
 
 /**
@@ -50,142 +50,142 @@ export const BATCH_LIMITS: any = {
 export class Publisher {
   table: any;
   settings!: any;
-  queue: Queue;
+  // queue: Queue;
   // tracing: OpenTelemetryTracer | undefined;
   constructor(table: any, options?: any) {
-    this.setOptions(options);
+    // this.setOptions(options);
     this.table = table;
-    this.queue = new Queue(this);
+    // this.queue = new Queue(this);
     // this.tracing =
     //   this.settings && this.settings.enableOpenTelemetryTracing
     //     ? new OpenTelemetryTracer()
     //     : undefined;
   }
 
-  flush(): Promise<void>;
-  flush(callback: any): void;
-  /**
-   * Immediately sends all remaining queued data. This is mostly useful
-   * if you are planning to call close() on the PubSub object that holds
-   * the server connections.
-   *
-   * @private
-   *
-   * @param {EmptyCallback} [callback] Callback function.
-   * @returns {Promise<EmptyResponse>}
-   */
-  flush(callback?: any): Promise<void> | void {
-    const definedCallback = callback ? callback : () => {};
+//   flush(): Promise<void>;
+//   flush(callback: any): void;
+//   /**
+//    * Immediately sends all remaining queued data. This is mostly useful
+//    * if you are planning to call close() on the PubSub object that holds
+//    * the server connections.
+//    *
+//    * @private
+//    *
+//    * @param {EmptyCallback} [callback] Callback function.
+//    * @returns {Promise<EmptyResponse>}
+//    */
+//   flush(callback?: any): Promise<void> | void {
+//     const definedCallback = callback ? callback : () => {};
 
-    const publishes = [promisify(this.queue.publish)()];
+//     const publishes = [promisify(this.queue.publish)()];
 
-    const allPublishes = Promise.all(publishes);
+//     const allPublishes = Promise.all(publishes);
 
-    allPublishes
-      .then(() => {
-        definedCallback(null);
-      })
-      .catch(definedCallback);
-  }
+//     allPublishes
+//       .then(() => {
+//         definedCallback(null);
+//       })
+//       .catch(definedCallback);
+//   }
 
-  /**
-   * Publish the provided message.
-   *
-   * @deprecated use {@link Publisher#publishMessage} instead.
-   *
-   * @private
-   * @see Publisher#publishMessage
-   *
-   * @param {buffer} data The message data. This must come in the form of a
-   *     Buffer object.
-   * @param {object.<string, string>} [attributes] Attributes for this message.
-   * @param {PublishCallback} [callback] Callback function.
-   * @returns {Promise<PublishResponse>}
-   */
-  publish(
-    rows: Buffer,
-    optionsOrCb?: any,
-    callback?: any
-  ): Promise<string> | void {
-    const options = typeof optionsOrCb === 'object' ? optionsOrCb : {};
-    callback = typeof optionsOrCb === 'function' ? optionsOrCb : callback;
-    return this.publishMessage({rows, options}, callback!);
-  }
-  /**
-   * Publish the provided message.
-   *
-   * @private
-   *
-   * @throws {TypeError} If data is not a Buffer object.
-   * @throws {TypeError} If any value in `attributes` object is not a string.
-   *
-   * @param {PubsubMessage} [message] Options for this message.
-   * @param {PublishCallback} [callback] Callback function.
-   */
-  publishMessage(data: any, callback: any): void {
-    const {rows, options = {}} = data;
+//   /**
+//    * Publish the provided message.
+//    *
+//    * @deprecated use {@link Publisher#publishMessage} instead.
+//    *
+//    * @private
+//    * @see Publisher#publishMessage
+//    *
+//    * @param {buffer} data The message data. This must come in the form of a
+//    *     Buffer object.
+//    * @param {object.<string, string>} [attributes] Attributes for this message.
+//    * @param {PublishCallback} [callback] Callback function.
+//    * @returns {Promise<PublishResponse>}
+//    */
+//   publish(
+//     rows: Buffer,
+//     optionsOrCb?: any,
+//     callback?: any
+//   ): Promise<string> | void {
+//     const options = typeof optionsOrCb === 'object' ? optionsOrCb : {};
+//     callback = typeof optionsOrCb === 'function' ? optionsOrCb : callback;
+//     return this.publishMessage({rows, options}, callback!);
+//   }
+//   /**
+//    * Publish the provided message.
+//    *
+//    * @private
+//    *
+//    * @throws {TypeError} If data is not a Buffer object.
+//    * @throws {TypeError} If any value in `attributes` object is not a string.
+//    *
+//    * @param {PubsubMessage} [message] Options for this message.
+//    * @param {PublishCallback} [callback] Callback function.
+//    */
+//   publishMessage(data: any, callback: any): void {
+//     const {rows, options = {}} = data;
 
-    if (!(data instanceof Buffer)) {
-      throw new TypeError('Data must be in the form of a Buffer.');
-    }
-
-//     for (const key of Object.keys(attributes!)) {
-//       const value = attributes![key];
-//       if (typeof value !== 'string') {
-//         throw new TypeError(`All attributes must be in the form of a string.
-// \nInvalid value of type "${typeof value}" provided for "${key}".`);
-//       }
+//     if (!(data instanceof Buffer)) {
+//       throw new TypeError('Data must be in the form of a Buffer.');
 //     }
 
-    // const span: Span | undefined = this.constructSpan(message);
+// //     for (const key of Object.keys(attributes!)) {
+// //       const value = attributes![key];
+// //       if (typeof value !== 'string') {
+// //         throw new TypeError(`All attributes must be in the form of a string.
+// // \nInvalid value of type "${typeof value}" provided for "${key}".`);
+// //       }
+// //     }
 
-      this.queue.add(data, callback);
-      return;
-  }
-  /**
-   * Indicates to the publisher that it is safe to continue publishing for the
-   * supplied ordering key.
-   *
-   * @private
-   *
-   * @param {string} key The ordering key to continue publishing for.
-   */
-  // resumePublishing(key: string) {
-  //   const queue = this.orderedQueues.get(key);
+//     // const span: Span | undefined = this.constructSpan(message);
 
-  //   if (queue) {
-  //     queue.resumePublishing();
-  //   }
-  // }
-  /**
-   * Sets the Publisher options.
-   *
-   * @private
-   *
-   * @param {PublishOptions} options The publisher options.
-   */
-  setOptions(options = {} as any): void {
-    const defaults = {
-      batching: {
-        maxBytes: defaultOptions.publish.maxOutstandingBytes,
-        maxMessages: defaultOptions.publish.maxOutstandingMessages,
-        maxMilliseconds: defaultOptions.publish.maxDelayMillis,
-      },
-    };
+//       this.queue.add(data, callback);
+//       return;
+//   }
+//   /**
+//    * Indicates to the publisher that it is safe to continue publishing for the
+//    * supplied ordering key.
+//    *
+//    * @private
+//    *
+//    * @param {string} key The ordering key to continue publishing for.
+//    */
+//   // resumePublishing(key: string) {
+//   //   const queue = this.orderedQueues.get(key);
 
-    const {
-      batching,
-    } = extend(true, defaults, options);
+//   //   if (queue) {
+//   //     queue.resumePublishing();
+//   //   }
+//   // }
+//   /**
+//    * Sets the Publisher options.
+//    *
+//    * @private
+//    *
+//    * @param {PublishOptions} options The publisher options.
+//    */
+//   setOptions(options = {} as any): void {
+//     const defaults = {
+//       batching: {
+//         maxBytes: defaultOptions.publish.maxOutstandingBytes,
+//         maxMessages: defaultOptions.publish.maxOutstandingMessages,
+//         maxMilliseconds: defaultOptions.publish.maxDelayMillis,
+//       },
+//     };
+
+//     const {
+//       batching,
+//     } = extend(true, defaults, options);
 
 
-    this.settings = {
-      batching: {
-        maxBytes: Math.min(batching.maxBytes, BATCH_LIMITS.maxBytes!),
-        maxMessages: Math.min(batching.maxMessages, BATCH_LIMITS.maxMessages!),
-        maxMilliseconds: batching.maxMilliseconds,
-      }
-    };
-  }
+//     this.settings = {
+//       batching: {
+//         maxBytes: Math.min(batching.maxBytes, BATCH_LIMITS.maxBytes!),
+//         maxMessages: Math.min(batching.maxMessages, BATCH_LIMITS.maxMessages!),
+//         maxMilliseconds: batching.maxMilliseconds,
+//       }
+//     };
+//   }
 }
 
 promisifyAll(Publisher, {

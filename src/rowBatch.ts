@@ -22,6 +22,18 @@ export interface BatchPublishOptions {
   maxMilliseconds?: number;
 }
 
+const defaultOptions = {
+    // The maximum number of messages we'll batch up for publish().
+    maxOutstandingMessages: 100,
+
+    // The maximum size of the total batched up messages for publish().
+    maxOutstandingBytes: 1 * 1024 * 1024,
+
+    // The maximum time we'll wait to send batched messages, in milliseconds.
+    maxDelayMillis: 10,
+
+}
+
 /**
  * @typedef BatchPublishOptions
  * @property {number} [maxBytes=1 * 1024 * 1024] The maximum number of bytes to
@@ -39,13 +51,13 @@ export interface BatchPublishOptions {
  * @param {BatchPublishOptions} options The batching options.
  */
 export class RowBatch {
-  options: BatchPublishOptions;
+  batchOptions: BatchPublishOptions | any;
   rows: any[];
   callbacks: any[];
   created: number;
   bytes: number;
   constructor(options: BatchPublishOptions) {
-    this.options = options;
+    this.batchOptions = options
     this.rows = [];
     this.callbacks = [];
     this.created = Date.now();
@@ -69,7 +81,7 @@ export class RowBatch {
    * @returns {boolean}
    */
   canFit(row: any): boolean {
-    const {maxMessages, maxBytes} = this.options;
+    const {maxMessages, maxBytes} = this.batchOptions;
     return (
       this.rows.length < maxMessages! &&
       this.bytes + Buffer.byteLength(JSON.stringify(row)) <= maxBytes!
@@ -92,7 +104,9 @@ export class RowBatch {
    * @returns {boolean}
    */
   isFull(): boolean {
-    const {maxMessages, maxBytes} = this.options;
+    const {maxMessages, maxBytes} = this.batchOptions;
     return this.rows.length >= maxMessages! || this.bytes >= maxBytes!;
   }
+
+
 }

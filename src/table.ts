@@ -47,11 +47,12 @@ import {GoogleErrorBody} from '@google-cloud/common/build/src/util';
 import {Duplex, Writable} from 'stream';
 import {JobMetadata} from './job';
 import bigquery from './types';
-import {Queue } from './streams'
+// import {Queue } from './streams'
 import {Publisher} from './publisher'
 import {RowBatch} from './rowBatch'
 import { file } from 'tmp';
-import { domNode } from 'is';
+import { any, domNode, inNextMonth } from 'is';
+import { Queue } from './streams';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const duplexify = require('duplexify');
@@ -1114,45 +1115,78 @@ class Table extends common.ServiceObject {
     this.bigQuery.createJob(body, callback!);
   }
 
-  createInsertStream_(options?: InsertRowsOptions): Writable {
+  createInsertStream_(options?: InsertRowsOptions | any): Writable {
     options =
     typeof options === 'object'
       ? options
-      : ({} as InsertRowsOptions);
+      : undefined;
     
-    const {schema} = options;
+    // const {schema} = options;
 
     const json = extend(true, {}, options);
 
-    const fileWriteStream = duplexify();
+    // const fileWriteStream = duplexify.obj()
+    // const fileWriteStream = new myStreamy({objectMode: true}, this, {})
+    
 
-    fileWriteStream.on('progress', (evt: any) => {
-      dup.emit('progress', evt);
-    });
 
     const dup = streamEvents(
-      pumpify([
-        new PassThrough(),
-        new encodeRows(),
-        fileWriteStream,
-      ])
+      // pumpify([
+        // new PassThrough(),
+        duplexify.obj()
+    
     ) as Duplex;
+    // const dup = duplexify.obj()
+    dup.on('progress', (evt: any) => {
+      // console.log('progress!')
+      return [evt, 'progress']
+    });
+
+    dup.on('response', (obj: any) => {
+      // dup.emit.bind(dup, 'response', obj)
+      console.log('fileStream reponse')
+    });
+    // fileWriteStream.on('prefinish', () => {
+    //   dup.cork();
+    // });
+    // fileWriteStream.on('finish', () => {
+    //   console.log('donezo')
+    //   dup.emit('complete');
+    // })
+    // fileWriteStream.on('complete', () => {
+    //  dup.uncork();
+    // });
+    // fileWriteStream.on('progress', (evt: any) => dup.emit('progress', evt));
+  
+    const insertQueue = new Queue(this, dup, options);
+    dup._write = (chunk:any, encoding:any, cb:any) => {
+      insertQueue.add(chunk, ()=>{})
+      cb()
+    }
 
     // const dup = streamEvents(duplexify());
-    const pub = new Publisher(this);
+    // const pub = new Publisher(this);
     dup.on('writing', () => {
-      pub.publishMessage(fileWriteStream, ()=>{ console.log('done!') })
-      return
+      // pub.publishMessage(fileWriteStream, ()=>{ console.log('done!') })
+      // obj = obj.toString()
+      //  = JSON.parse(obj.toString());
+      // insertQueue.add(obj, ()=>{
+      // })
+      // return
+      console.log('dup is writing')
     });
+    dup.on('reading', () => {
+      console.log('dup read')
+    })
 
-    fileWriteStream.on('response', dup.emit.bind(dup, 'response'));
-    fileWriteStream.on('prefinish', () => {
-      dup.cork();
-    });
-
-    fileWriteStream.on('complete', () => {
-     dup.uncork();
-    });
+    dup.on('data', (obj: any) => {
+      console.log('on data!')
+      console.log(obj)
+    })
+    // dup.on('data', (obj: any, encoding:any, callback:any) => {
+    //   insertQueue.add(obj, ()=>{})
+    //   return
+    // })
     return dup as Writable;
   }
 
@@ -2278,9 +2312,37 @@ class Table extends common.ServiceObject {
   }
 }
 
+export class myStreamy extends Duplex{
+  _max: any = 2;
+  _index: any = 0;
+  table: any;
+  queue: any;
+  constructor(opt:any, table: any, options:any) {
+    super(opt);
+    this.table = table;
+    const insertQueue = new Queue(this.table, this, options);
+    this.queue = insertQueue
+  }
+
+
+  _write(chunk:any, encoding:any, callback:any) {
+    // Coerce the chunk to a number if necessary.
+    // chunk |= 0;
+
+    // Transform the chunk into something else.
+    // const data = chunk.toString(16);
+    // let data2 = 'steffany!'
+    // Push the data onto the readable queue.
+    this.queue.add(chunk)
+    callback();
+  }
+  
+  _read() {}
+}
+
 export class encodeRows extends Transform {
-  constructor(options?:any) {
-    super (options)
+  constructor() {
+    super ({objectMode: true})
 
     // The stream will have Buffer chunks. The
     // decoder converts these to String instances.
@@ -2289,9 +2351,9 @@ export class encodeRows extends Transform {
 
   _transform (chunk: any, encoding:any, callback:any) {
     // Convert the Buffer chunks to String.
-    if (encoding === 'buffer') {
-      chunk = chunk.toJSON();
-    }
+    // if (encoding === 'buffer') {
+    //   chunk = chunk.toJSON();
+    // }
 
     // Exit on CTRL + C.
     if (chunk === '\u0003') {
@@ -2310,11 +2372,13 @@ export class encodeRows extends Transform {
 
       return encoded;
     });
-
+    const data = Buffer.from(JSON.stringify(rows))
     // Pass the chunk on.
-    callback(null, rows)
+    callback(null, data)
   }
 }
+
+
 
 /*! Developer Documentation
  *
