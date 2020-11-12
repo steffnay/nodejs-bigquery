@@ -1137,10 +1137,10 @@ class Table extends common.ServiceObject {
     
     ) as Duplex;
     // const dup = duplexify.obj()
-    dup.on('progress', (evt: any) => {
-      // console.log('progress!')
-      return [evt, 'progress']
-    });
+    // dup.on('progress', (evt: any) => {
+    //   // console.log('progress!')
+    //   return [evt, 'progress']
+    // });
 
     dup.on('response', (obj: any) => {
       // dup.emit.bind(dup, 'response', obj)
@@ -1159,34 +1159,36 @@ class Table extends common.ServiceObject {
     // fileWriteStream.on('progress', (evt: any) => dup.emit('progress', evt));
   
     const insertQueue = new Queue(this, dup, options);
-    dup._write = (chunk:any, encoding:any, cb:any) => {
-      insertQueue.add(chunk, ()=>{})
-      cb()
-    }
+    insertQueue.on('response', (resp:any) => {console.log('made is heaaaa')
+      dup.emit('response', resp)})
+    // dup._write = (chunk:any, encoding:any, cb:any) => {
+    //   insertQueue.add(chunk, ()=>{})
+    //   cb()
+    // }
 
     // const dup = streamEvents(duplexify());
     // const pub = new Publisher(this);
-    dup.on('writing', () => {
+    dup.on('writing', (chunk:any, encoding:any, cb:any) => {
       // pub.publishMessage(fileWriteStream, ()=>{ console.log('done!') })
       // obj = obj.toString()
       //  = JSON.parse(obj.toString());
       // insertQueue.add(obj, ()=>{
       // })
       // return
-      console.log('dup is writing')
+      console.log(typeof chunk)
+      insertQueue.add(chunk, ()=>{})
+      cb()
     });
     dup.on('reading', () => {
       console.log('dup read')
     })
 
-    dup.on('data', (obj: any) => {
-      console.log('on data!')
-      console.log(obj)
-    })
-    // dup.on('data', (obj: any, encoding:any, callback:any) => {
-    //   insertQueue.add(obj, ()=>{})
-    //   return
+    // dup.on('data', (chunk:any, encoding:any, cb:any) => {
+    //   // console.log('on data!')
+    //   // insertQueue.add(chunk, ()=>{})
     // })
+    
+    dup.on('data', () => {})
     return dup as Writable;
   }
 

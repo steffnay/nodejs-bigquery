@@ -172,7 +172,7 @@ export interface BatchPublishOptions {
 
 const defaultOptions = {
     // The maximum number of messages we'll batch up for publish().
-    maxOutstandingMessages: 100,
+    maxOutstandingMessages: 500,
 
     // The maximum size of the total batched up messages for publish().
     maxOutstandingBytes: 1 * 1024 * 1024,
@@ -277,13 +277,16 @@ export abstract class RowQueue extends EventEmitter {
         } as GoogleErrorBody);
       }
       callbacks.forEach((callback) => callback(err, resp));
-      if (typeof callback === 'function') {
-        console.log('***')
-        this.stream.emit('response', resp)
-        callback(err);
-      }
+      // if (typeof callback === 'function') {
+      //   console.log('***')
+      //   this.emit('response', resp)
+      //   callback(err);
+      // }
       console.log('***')
-      this.stream.emit('response', resp)
+      this.emit('response', resp)
+      callback(err);
+      // console.log('***')
+      // this.stream.emit('response', resp)
     })
     
     // common.util.makeWritableStream(sendStream, {
@@ -354,7 +357,7 @@ export class Queue extends RowQueue {
       this.publish();
     }
     
-    this.batch.add(row, callback);
+    this.batch.add(row, callback!);
 
     if (this.batch.isFull()) {
       this.publish();
