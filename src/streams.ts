@@ -307,7 +307,34 @@ export abstract class RowQueue extends EventEmitter {
     //   // request: reqOpts,
     // });
   }
+    // from pub-sub
+    flush(): Promise<void>;
+    flush(callback: EmptyCallback): void;
+    /**
+     * Immediately sends all remaining queued data. This is mostly useful
+     * if you are planning to call close() on the PubSub object that holds
+     * the server connections.
+     *
+     * @private
+     *
+     * @param {EmptyCallback} [callback] Callback function.
+     * @returns {Promise<EmptyResponse>}
+     */
+    flush(callback?: any): Promise<void> | void {
+      const definedCallback = callback ? callback : () => {};
 
+      const publishes = [promisify(this.queue.publish)()];
+      Array.from(this.orderedQueues.values()).forEach(q =>
+        publishes.push(promisify(q.publish)())
+      );
+      const allPublishes = Promise.all(publishes);
+
+      allPublishes
+        .then(() => {
+          definedCallback(null);
+        })
+        .catch(definedCallback);
+    }
 
 }
 
@@ -384,7 +411,7 @@ export class Queue extends RowQueue {
       delete this.pending;
     }
 
-    this._publish(rows, callbacks, callback
+    this._publish(rows, callbacks, callback);
     //   (err: any, resp:any) => {
     //   // this.inFlight = false;
 
@@ -400,7 +427,7 @@ export class Queue extends RowQueue {
     //     // definedCallback(null, resp);
     //   }
     // }
-    );
+    
   }
   // get currentBatch(): any {
   //   if (!this.batches.length) {
